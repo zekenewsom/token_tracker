@@ -181,41 +181,108 @@ async function fetchAllTokenTransfers() {
 }
 
 async function refreshDataViaRPC() {
-  try {
-    await prisma.transaction.deleteMany({});
-    
-    const transfers = await fetchAllTokenTransfers();
-    
-    for (const t of transfers) {
-      const sourceWallet = await prisma.wallet.upsert({
-          where: { address: t.sender },
-          update: {},
-          create: { address: t.sender },
-      });
-      const destinationWallet = await prisma.wallet.upsert({
-          where: { address: t.receiver },
-          update: {},
-          create: { address: t.receiver },
-      });
+  console.log('[LOG] Starting full transaction history refresh...');
 
-      await prisma.transaction.create({
-        data: {
-          signature: t.signature,
-          blockTime: t.blockTime,
-          type: t.type,
-          tokenAmount: t.tokenAmount,
-          source_wallet_id: sourceWallet.id,
-          destination_wallet_id: destinationWallet.id
-        }
-      });
+  // This helper function parses a single transaction from the Helius v0 API
+  const parseHeliusTransaction = (tx) => {
+    // Find the token transfer related to our specific mint
+    const tokenTransfer = tx.tokenTransfers.find(t => t.mint === MINT_ADDRESS);
+    if (!tokenTransfer) return null;
+
+    let transactionType = 'transfer';
+    let solAmount = 0;
+
+    // Check if it's a swap to determine buy/sell and SOL amount
+    if (tx.type === 'SWAP') {
+      const userAccount = tokenTransfer.fromUserAccount || tokenTransfer.toUserAccount;
+      // If the user's token balance decreases, it's a sell.
+      const isSell = tx.tokenTransfers.some(t => t.fromUserAccount === userAccount && t.mint === MINT_ADDRESS);
+      transactionType = isSell ? 'sell' : 'buy';
+      
+      // Find the corresponding SOL transfer
+      const nativeTransfer = tx.nativeTransfers.find(n => n.fromUserAccount === userAccount || n.toUserAccount === userAccount);
+      if (nativeTransfer) {
+        solAmount = nativeTransfer.amount / 1_000_000_000;
+      }
     }
 
-    console.log("[LOG] Transaction database refreshed via RPC method.");
-  } catch (err) {
-    console.error("Failed to refresh transactions via RPC:", err);
-    throw err;
+    return {
+      signature: tx.signature,
+      blockTime: tx.timestamp,
+      type: transactionType,
+      source: tokenTransfer.fromUserAccount,
+      destination: tokenTransfer.toUserAccount,
+      tokenAmount: tokenTransfer.tokenAmount,
+      solAmount: solAmount,
+    };
+  };
+
+  // --- Main Fetching Logic ---
+  let allParsedTransactions = [];
+  let lastSignature;
+  let hasMore = true;
+  const HELIUS_API_KEY = HELIUS_RPC_URL.split('/').pop(); // Assumes API key is at the end of the RPC URL
+
+  while (hasMore) {
+    let url = `https://api.helius.xyz/v0/tokens/${MINT_ADDRESS}/transactions?api-key=${HELIUS_API_KEY}`;
+    if (lastSignature) {
+      url += `&before=${lastSignature}`;
+    }
+
+    try {
+      const response = await axios.get(url);
+      const transactions = response.data;
+      
+      if (transactions && transactions.length > 0) {
+        for (const tx of transactions) {
+          const parsed = parseHeliusTransaction(tx);
+          if (parsed) {
+            allParsedTransactions.push(parsed);
+          }
+        }
+        lastSignature = transactions[transactions.length - 1].signature;
+        console.log(`[LOG] Fetched ${transactions.length} transactions. Total parsed: ${allParsedTransactions.length}`);
+      } else {
+        hasMore = false;
+      }
+    } catch (error) {
+      console.error('Error fetching token transaction history:', error.message);
+      hasMore = false;
+    }
   }
+  
+  // --- Database Update Logic ---
+  console.log(`[LOG] Finished fetching. Total parsed transactions: ${allParsedTransactions.length}. Updating database...`);
+  await prisma.transaction.deleteMany({}); // Clear old transactions
+
+  for (const tx of allParsedTransactions) {
+    const sourceWallet = await prisma.wallet.upsert({
+      where: { address: tx.source },
+      update: {},
+      create: { address: tx.source },
+    });
+    const destinationWallet = await prisma.wallet.upsert({
+      where: { address: tx.destination },
+      update: {},
+      create: { address: tx.destination },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        signature: tx.signature,
+        blockTime: tx.blockTime,
+        type: tx.type,
+        tokenAmount: tx.tokenAmount,
+        solAmount: tx.solAmount,
+        source_wallet_id: sourceWallet.id,
+        destination_wallet_id: destinationWallet.id,
+      },
+    });
+  }
+
+  console.log('[LOG] Transaction database refreshed with full history.');
 }
+
 
 module.exports = {
   refreshDataViaRPC,

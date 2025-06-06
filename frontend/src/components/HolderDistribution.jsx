@@ -23,7 +23,7 @@ export default function HolderDistribution() {
     const loadHolders = async () => {
       try {
         setIsLoading(true);
-        const res = await fetchHolders();
+        const res = await fetchHolders(Number.MAX_SAFE_INTEGER); // Requesting all holders
         setHolders(res.data.holders);
       } catch (err) {
         setError('Failed to load token holders.');
