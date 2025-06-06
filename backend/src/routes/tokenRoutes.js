@@ -5,12 +5,13 @@ const router = express.Router();
 const tokenController = require('../controllers/tokenController');
 
 // Route to trigger a manual data refresh
-router.post('/refresh', tokenController.refreshData);
+router.post('/refresh', tokenController.refresh);
 
 // Route to get paginated transactions
 router.get('/transactions', tokenController.getTransactions);
 
 // Route to get token holders
-router.get('/holders', tokenController.getHolders);
+router.get('/holders', tokenController.getTokenHolders);
 
 module.exports = router;
+

@@ -1,0 +1,44 @@
+// backend/prisma/schema.prisma
+// Prisma schema generated from your SQL migration
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Wallet {
+  id         Int      @id @default(autoincrement())
+  address    String   @unique
+  created_at DateTime @default(now())
+  transactions_source      Transaction[] @relation("SourceWallet")
+  transactions_destination Transaction[] @relation("DestinationWallet")
+  token_holders TokenHolder[]
+}
+
+model Transaction {
+  id                  Int      @id @default(autoincrement())
+  signature           String   @unique
+  blockTime           Int
+  type                String?
+  tokenAmount         Float?
+  solAmount           Float?
+  source_wallet_id    Int?
+  destination_wallet_id Int?
+  senderAddress       String?
+  receiverAddress     String?
+  sourceWallet        Wallet?  @relation("SourceWallet", fields: [source_wallet_id], references: [id])
+  destinationWallet   Wallet?  @relation("DestinationWallet", fields: [destination_wallet_id], references: [id])
+}
+
+model TokenHolder {
+  id                        Int      @id @default(autoincrement())
+  wallet_id                 Int      @unique
+  balance                   Float
+  average_acquisition_price Float?
+  last_updated              DateTime @default(now())
+  wallet                    Wallet   @relation(fields: [wallet_id], references: [id])
+}
