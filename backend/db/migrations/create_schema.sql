@@ -1,0 +1,2 @@
+-- SQL schema for token_tracker
+-- TODO: Define tables for transactions, wallets, holders

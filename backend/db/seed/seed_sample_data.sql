@@ -1,0 +1,2 @@
+-- Sample data for token_tracker
+-- TODO: Insert sample transactions, wallets, holders

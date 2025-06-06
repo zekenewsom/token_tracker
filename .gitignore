@@ -1,0 +1,27 @@
+# Node
+node_modules/
+.env
+.env.*
+dist/
+build/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env/
+
+# SQLite
+*.sqlite3
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vite/React
+frontend/dist/
+frontend/.vite/
