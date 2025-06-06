@@ -50,6 +50,7 @@ export default function HolderDistribution() {
                 <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-0">Rank</th>
                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Holder Address</th>
                 <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900 dark:text-white">Balance</th>
+                <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900 dark:text-white">Avg. Acq. Price (SOL)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
@@ -63,6 +64,9 @@ export default function HolderDistribution() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-right font-medium text-gray-900 dark:text-white">
                     {formatNumber(holder.balance)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
+                    {holder.average_acquisition_price ? holder.average_acquisition_price.toFixed(8) : 'N/A'}
                   </td>
                 </tr>
               ))}
