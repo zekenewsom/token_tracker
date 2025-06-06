@@ -1,6 +1,10 @@
+/* frontend/src/styles/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 body {
-  margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #f8fafc;
-  color: #222;
+  @apply bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
