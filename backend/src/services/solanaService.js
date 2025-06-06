@@ -4,168 +4,97 @@ const axios = require('axios');
 const { tokenMintAddress, rpcUrl } = require('../config/solanaConfig');
 const { log } = require('../utils/logger');
 
-// The address of the Raydium liquidity pool authority, used to identify buys/sells.
-const RAYDIUM_AUTHORITY = '5Q544fKrFoe6tsEbD7S8sugEThBLsoJvGCo3LpfdMsk7';
+// Extract the API key from the full RPC URL provided in the .env file.
+const API_KEY = rpcUrl.substring(rpcUrl.indexOf('?api-key=') + 9);
 
-const api = axios.create({
-  baseURL: rpcUrl,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+// The base URL for the Helius Token API.
+const HELIUS_TOKEN_API_BASE = 'https://api.helius.xyz';
 
 /**
- * Parses the raw transaction data from Helius to a structured format.
+ * Parses a transaction from the Helius v0 Token API.
  * @param {object} tx - The raw transaction object from Helius.
  * @returns {object|null} A structured transaction object or null if not relevant.
  */
-const parseTransaction = (tx) => {
-  if (!tx.meta || tx.meta.err) {
-    return null; // Skip failed or irrelevant transactions
-  }
+const parseHeliusTransaction = (tx) => {
+  if (tx.type === 'TRANSFER' && tx.tokenTransfers) {
+    const relevantTransfer = tx.tokenTransfers.find(t => t.mint === tokenMintAddress);
+    if (relevantTransfer) {
+      return {
+        signature: tx.signature,
+        blockTime: tx.timestamp,
+        type: 'transfer',
+        source: relevantTransfer.fromUserAccount,
+        destination: relevantTransfer.toUserAccount,
+        tokenAmount: relevantTransfer.tokenAmount,
+        solAmount: 0,
+      };
+    }
+  } else if (tx.type === 'SWAP' && tx.tokenTransfers) {
+    const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenMintAddress);
+    if (!tokenTransfer) return null;
 
-  const { blockTime, meta, signature } = tx.transaction;
-  const tokenTransfers = tx.transaction.message.instructions
-    .filter(ix => ix.programId === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' && ix.parsed?.type === 'transferChecked')
-    .map(ix => ix.parsed.info);
+    // Determine the direction of the swap to classify as 'buy' or 'sell'.
+    const isSell = tokenTransfer.fromUserAccount !== 'So11111111111111111111111111111111111111112';
+    const userAccount = isSell ? tokenTransfer.fromUserAccount : tokenTransfer.toUserAccount;
+    const solTransfer = tx.nativeTransfers.find(nt => nt.fromUserAccount === userAccount || nt.toUserAccount === userAccount);
     
-  if (tokenTransfers.length === 0) {
-      return null;
+    return {
+        signature: tx.signature,
+        blockTime: tx.timestamp,
+        type: isSell ? 'sell' : 'buy',
+        source: isSell ? userAccount : 'DEX',
+        destination: isSell ? 'DEX' : userAccount,
+        tokenAmount: tokenTransfer.tokenAmount,
+        solAmount: (solTransfer?.amount || 0) / 1_000_000_000,
+    };
   }
 
-  const accountKeys = tx.transaction.message.accountKeys.map(acc => acc.pubkey);
-  const preBalances = meta.preBalances;
-  const postBalances = meta.postBalances;
-  
-  // Find SOL balance change
-  const solChange = postBalances[0] - preBalances[0]; // Fee payer is always the first account
-
-  let type = 'transfer';
-  let source = null;
-  let destination = null;
-  let tokenAmount = 0;
-  
-  for (const transfer of tokenTransfers) {
-      if (transfer.mint === tokenMintAddress) {
-          tokenAmount = transfer.tokenAmount.uiAmount;
-          // Heuristic to determine buy/sell
-          // If Raydium authority is involved, it's a swap (buy/sell)
-          if (accountKeys.includes(RAYDIUM_AUTHORITY)) {
-              if (solChange > 0) {
-                  type = 'sell';
-                  source = transfer.authority;
-                  destination = 'Raydium Pool';
-              } else {
-                  type = 'buy';
-                  source = 'Raydium Pool';
-                  destination = transfer.destination;
-              }
-          } else {
-              // Simple transfer
-              source = transfer.source;
-              destination = transfer.destination;
-          }
-          break; // Process the first relevant transfer
-      }
-  }
-
-  return {
-    signature: signature[0],
-    blockTime: blockTime,
-    type,
-    source,
-    destination,
-    tokenAmount,
-    solAmount: Math.abs(solChange) / 1_000_000_000, // Convert lamports to SOL
-  };
+  return null;
 };
 
-
 /**
- * Fetches all transaction signatures for the given token mint address.
+ * Fetches and parses all transactions for the token using Helius's v0 Token API.
  */
-async function getSignatures() {
-  let allSignatures = [];
-  let page = 1;
+async function fetchTokenTransactions() {
+  let allTransactions = [];
+  let lastSignature;
   let hasMore = true;
 
-  log(`Fetching signatures for token: ${tokenMintAddress}`);
+  log(`Fetching token transaction history for: ${tokenMintAddress}`);
 
   while (hasMore) {
-    try {
-      const response = await api.post('/', {
-        jsonrpc: '2.0',
-        id: `get-signatures-for-asset-${page}`,
-        method: 'getSignaturesForAsset',
-        params: {
-          assetId: tokenMintAddress,
-          page: page,
-          limit: 1000,
-        },
-      });
+    // Construct the URL manually for a direct GET request.
+    let url = `${HELIUS_TOKEN_API_BASE}/v0/tokens/${tokenMintAddress}/transactions?api-key=${API_KEY}`;
+    if (lastSignature) {
+      url += `&before=${lastSignature}`;
+    }
 
-      const { result } = response.data;
-      if (result.items && result.items.length > 0) {
-        const signatures = result.items.map(item => item.signature);
-        allSignatures = allSignatures.concat(signatures);
-        log(`Fetched ${signatures.length} signatures on page ${page}. Total: ${allSignatures.length}`);
-        page++;
+    try {
+      const response = await axios.get(url);
+      
+      const transactions = response.data;
+      if (transactions && transactions.length > 0) {
+        for (const tx of transactions) {
+          const parsed = parseHeliusTransaction(tx);
+          if (parsed) {
+            allTransactions.push(parsed);
+          }
+        }
+        lastSignature = transactions[transactions.length - 1].signature;
+        log(`Fetched ${transactions.length} transactions. Total parsed: ${allTransactions.length}`);
       } else {
         hasMore = false;
       }
     } catch (error) {
-      console.error('Error fetching signatures:', error.response ? error.response.data : error.message);
+      const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;
+      console.error(`Error fetching token transaction history from URL: ${url}`);
+      console.error('Error details:', errorMsg);
       hasMore = false;
     }
   }
-  return allSignatures;
-}
 
-/**
- * Fetches and parses all transactions for the token.
- */
-async function fetchTokenTransactions() {
-  const signatures = await getSignatures();
-  if (signatures.length === 0) {
-    log('No signatures found for this token.');
-    return [];
-  }
-
-  log(`Found ${signatures.length} total signatures. Fetching transaction details...`);
-  const parsedTransactions = [];
-  const batchSize = 100; // Helius API limit
-
-  for (let i = 0; i < signatures.length; i += batchSize) {
-    const batch = signatures.slice(i, i + batchSize);
-    try {
-      const response = await api.post('/', {
-        jsonrpc: '2.0',
-        id: 'get-transactions',
-        method: 'getTransactions',
-        params: {
-          signatures: batch,
-        },
-      });
-
-      const { result } = response.data;
-      if (result) {
-        for (const tx of result) {
-          if (tx) {
-            const parsedTx = parseTransaction(tx);
-            if (parsedTx) {
-              parsedTransactions.push(parsedTx);
-            }
-          }
-        }
-      }
-      log(`Processed batch ${i / batchSize + 1} of ${Math.ceil(signatures.length / batchSize)}. Parsed transactions: ${parsedTransactions.length}`);
-    } catch (error) {
-      console.error('Error fetching transaction batch:', error.response ? error.response.data : error.message);
-    }
-  }
-
-  log(`Finished fetching all transactions. Total parsed: ${parsedTransactions.length}`);
-  return parsedTransactions.sort((a, b) => b.blockTime - a.blockTime); // Sort by most recent
+  log(`Finished fetching all transactions. Total parsed: ${allTransactions.length}`);
+  return allTransactions.sort((a, b) => b.blockTime - a.blockTime);
 }
 
 module.exports = { fetchTokenTransactions };
