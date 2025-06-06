@@ -37,10 +37,10 @@ async function fetchAllTokenHoldersViaHeliusDAS() {
 }
 
 async function refreshDataViaRPC() {
-  console.log('[LOG] Starting full transaction history refresh using Helius REST API...');
-  
+  console.log('[LOG] Starting incremental transaction refresh using Helius REST API (per holder address)...');
+
   if (!HELIUS_API_KEY) {
-      throw new Error("HELIUS_API_KEY is not set in the .env file. Please add it to fetch transaction history.");
+    throw new Error("HELIUS_API_KEY is not set in the .env file. Please add it to fetch transaction history.");
   }
 
   const parseHeliusTransaction = (tx) => {
@@ -58,9 +58,9 @@ async function refreshDataViaRPC() {
         solAmount = nativeTransfer.amount / 1_000_000_000;
       }
     } else {
-        const userAccount = tokenTransfer.fromUserAccount || tokenTransfer.toUserAccount;
-        const isReceiving = tokenTransfer.toUserAccount === userAccount;
-        transactionType = isReceiving ? 'transfer_in' : 'transfer_out';
+      const userAccount = tokenTransfer.fromUserAccount || tokenTransfer.toUserAccount;
+      const isReceiving = tokenTransfer.toUserAccount === userAccount;
+      transactionType = isReceiving ? 'transfer_in' : 'transfer_out';
     }
 
     return {
@@ -74,35 +74,66 @@ async function refreshDataViaRPC() {
     };
   };
 
-  let allParsedTransactions = [];
-  let lastSignature;
-  let hasMore = true;
-  while (hasMore) {
-    let url = `https://api.helius.xyz/v0/tokens/${MINT_ADDRESS}/transactions?api-key=${HELIUS_API_KEY}`;
-    if (lastSignature) url += `&before=${lastSignature}`;
+  // Step 1: Find the most recent transaction stored in the database
+  const lastTransaction = await prisma.transaction.findFirst({
+    orderBy: {
+      blockTime: 'desc',
+    },
+  });
+  const lastSignature = lastTransaction?.signature;
+  console.log(`[LOG] Last known signature: ${lastSignature}`);
 
-    try {
-      const response = await axios.get(url);
-      const transactions = response.data;
-      if (transactions && transactions.length > 0) {
-        for (const tx of transactions) {
-          const parsed = parseHeliusTransaction(tx);
-          if (parsed) allParsedTransactions.push(parsed);
+  // Step 2: Fetch all current token holders
+  const holders = await fetchAllTokenHoldersViaHeliusDAS();
+  const holderAddresses = holders.map(h => h.owner);
+  console.log(`[LOG] Found ${holderAddresses.length} token holder addresses to scan for transactions.`);
+
+  // Step 3: Fetch transactions for each holder, deduplicate, filter for mint, and stop at last known signature
+  const seenSignatures = new Set();
+  let newTransactions = [];
+  let foundLastTx = false;
+
+  for (const address of holderAddresses) {
+    if (foundLastTx) break;
+    let lastFetchedSignature;
+    let hasMore = true;
+
+    while (hasMore && !foundLastTx) {
+      let url = `https://api.helius.xyz/v0/addresses/${address}/transactions?api-key=${HELIUS_API_KEY}`;
+      if (lastFetchedSignature) url += `&before=${lastFetchedSignature}`;
+
+      try {
+        const response = await axios.get(url);
+        const transactions = response.data;
+
+        if (transactions && transactions.length > 0) {
+          for (const tx of transactions) {
+            if (!tx.tokenTransfers?.some(t => t.mint === MINT_ADDRESS)) continue; // Filter for this mint
+            if (seenSignatures.has(tx.signature)) continue; // Deduplicate
+            if (tx.signature === lastSignature) {
+              foundLastTx = true;
+              break;
+            }
+            seenSignatures.add(tx.signature);
+            const parsed = parseHeliusTransaction(tx);
+            if (parsed) newTransactions.push(parsed);
+          }
+          lastFetchedSignature = transactions[transactions.length - 1].signature;
+        } else {
+          hasMore = false;
         }
-        lastSignature = transactions[transactions.length - 1].signature;
-      } else {
+      } catch (error) {
+        console.error(`[ERROR] Could not fetch transactions for address ${address}:`, error.message);
         hasMore = false;
       }
-    } catch (error) {
-      console.error('Fatal Error: Could not fetch token transaction history from Helius API. Please check your HELIUS_API_KEY.', error.message);
-      hasMore = false;
     }
   }
 
-  console.log(`[LOG] Finished fetching. Total parsed transactions: ${allParsedTransactions.length}. Updating database...`);
-  await prisma.transaction.deleteMany({});
+  // Step 4: Insert new transactions in chronological order
+  newTransactions.reverse();
+  console.log(`[LOG] Finished fetching. Found ${newTransactions.length} new transactions. Updating database...`);
 
-  for (const tx of allParsedTransactions) {
+  for (const tx of newTransactions) {
     const sourceWallet = await prisma.wallet.upsert({ where: { address: tx.source }, update: {}, create: { address: tx.source } });
     const destinationWallet = await prisma.wallet.upsert({ where: { address: tx.destination }, update: {}, create: { address: tx.destination } });
     await prisma.transaction.create({
@@ -117,8 +148,9 @@ async function refreshDataViaRPC() {
       },
     });
   }
-  console.log('[LOG] Transaction database refreshed.');
+  console.log('[LOG] Incremental transaction refresh complete.');
 }
+
 
 async function refreshHolderData() {
   console.log('[LOG] Starting holder data refresh...');
@@ -135,24 +167,33 @@ async function refreshHolderData() {
   console.log(`[LOG] Successfully refreshed ${holders.length} token holder balances.`);
 
   console.log('[LOG] Calculating average acquisition prices...');
-  const buyTransactions = await prisma.transaction.findMany({
-    where: { type: 'buy' },
+  const acquisitionTransactions = await prisma.transaction.findMany({
+    where: {
+      type: {
+        in: ['buy', 'transfer_in'] // Broaden the scope of acquisition
+      }
+    },
     include: { destinationWallet: true },
   });
 
-  const walletBuys = {};
-  for (const tx of buyTransactions) {
+  const walletAcquisitions = {};
+  for (const tx of acquisitionTransactions) {
     if (tx.destinationWallet?.address) {
-        const address = tx.destinationWallet.address;
-        if (!walletBuys[address]) walletBuys[address] = { totalSol: 0, totalTokens: 0 };
-        walletBuys[address].totalSol += tx.solAmount;
-        walletBuys[address].totalTokens += tx.tokenAmount;
+      const address = tx.destinationWallet.address;
+      if (!walletAcquisitions[address]) {
+        walletAcquisitions[address] = { totalSol: 0, totalTokens: 0 };
+      }
+      // Add the SOL amount for buys, and 0 for transfer_in
+      if (tx.type === 'buy') {
+        walletAcquisitions[address].totalSol += tx.solAmount;
+      }
+      walletAcquisitions[address].totalTokens += tx.tokenAmount;
     }
   }
 
   const updatePromises = [];
-  for (const address in walletBuys) {
-    const { totalSol, totalTokens } = walletBuys[address];
+  for (const address in walletAcquisitions) {
+    const { totalSol, totalTokens } = walletAcquisitions[address];
     if (totalTokens > 0) {
       const avgPrice = totalSol / totalTokens;
       const wallet = await prisma.wallet.findUnique({ where: { address } });
@@ -167,7 +208,8 @@ async function refreshHolderData() {
     }
   }
   await Promise.all(updatePromises);
-  console.log(`[LOG] Finished calculating acquisition prices for ${Object.keys(walletBuys).length} wallets.`);
+  console.log(`[LOG] Finished calculating acquisition prices for ${Object.keys(walletAcquisitions).length} wallets.`);
+
 }
 
 module.exports = {
