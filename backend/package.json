@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "db:init": "node -e \"require('./src/services/dbService.js').initializeDatabase()\""
+    "db:init": "prisma migrate dev"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
