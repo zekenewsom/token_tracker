@@ -83,7 +83,7 @@ exports.getTokenHolders = async (req, res) => {
     const result = holders.map(h => ({
       address: h.wallet.address,
       balance: h.balance,
-      average_acquisition_price: h.average_acquisition_price,
+      average_acquisition_price_usd: h.average_acquisition_price_usd,
     }));
 
     res.json({ holders: result, count: result.length });

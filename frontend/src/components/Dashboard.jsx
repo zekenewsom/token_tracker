@@ -1,11 +1,12 @@
 // frontend/src/components/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { refreshData, fetchTransactions } from '../services/api';
+import { refreshData, fetchTransactions, fetchHolders } from '../services/api';
 import TransactionFeed from './TransactionFeed.jsx';
 import HolderDistribution from './HolderDistribution.jsx';
 
 export default function Dashboard() {
   const [transactions, setTransactions] = useState([]);
+  const [holders, setHolders] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState('Ready.');
@@ -16,10 +17,14 @@ export default function Dashboard() {
     setStatusMessage('Refreshing data... This may take a few minutes.');
     try {
       const refreshRes = await refreshData();
-      setStatusMessage(refreshRes.data.message || 'Data refreshed. Fetching transactions...');
-      const transactionsRes = await fetchTransactions();
+      setStatusMessage(refreshRes.data.message || 'Data refreshed. Fetching updated data...');
+      const [transactionsRes, holdersRes] = await Promise.all([
+        fetchTransactions(),
+        fetchHolders(Number.MAX_SAFE_INTEGER),
+      ]);
       setTransactions(transactionsRes.data);
-      setStatusMessage(`Displaying ${transactionsRes.data.length} recent transactions.`);
+      setHolders(holdersRes.data.holders);
+      setStatusMessage(`Displaying ${transactionsRes.data.length} transactions and ${holdersRes.data.holders.length} holders.`);
     } catch (err) {
       const message = err.response?.data?.message || err.message;
       setError(`Failed to refresh data: ${message}`);
@@ -34,14 +39,18 @@ export default function Dashboard() {
   useEffect(() => {
     const loadInitialData = async () => {
         setIsLoading(true);
-        setStatusMessage('Fetching initial transactions...');
+        setStatusMessage('Fetching initial data...');
         try {
-            const transactionsRes = await fetchTransactions();
+            const [transactionsRes, holdersRes] = await Promise.all([
+              fetchTransactions(),
+              fetchHolders(Number.MAX_SAFE_INTEGER),
+            ]);
             setTransactions(transactionsRes.data);
+            setHolders(holdersRes.data.holders);
             if (transactionsRes.data.length === 0) {
                 setStatusMessage('No data found. Click "Refresh Data" to fetch from the blockchain.');
             } else {
-                setStatusMessage(`Displaying ${transactionsRes.data.length} cached transactions.`);
+                setStatusMessage(`Displaying ${transactionsRes.data.length} cached transactions and ${holdersRes.data.holders.length} holders.`);
             }
         } catch (err) {
             setError('Could not fetch initial data. The backend might be offline or needs to be refreshed.');
@@ -87,7 +96,7 @@ export default function Dashboard() {
             <TransactionFeed transactions={transactions} isLoading={isLoading && transactions.length === 0} />
           </div>
           <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4 lg:col-span-2">
-            <HolderDistribution />
+            <HolderDistribution holders={holders} isLoading={isLoading} />
           </div>
         </div>
       </div>
