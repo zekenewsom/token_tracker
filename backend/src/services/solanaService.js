@@ -98,51 +98,94 @@ async function findAssociatedTokenAddress(walletAddress, tokenMintAddress) {
     return ata.toBase58();
 }
 
+// Add this function after the existing imports and constants
+async function getWalletSyncStatus(walletAddress) {
+    // Check if we have recent transactions for this wallet
+    const latestTransaction = await prisma.transaction.findFirst({
+        where: {
+            OR: [
+                { sourceWallet: { address: walletAddress } },
+                { destinationWallet: { address: walletAddress } },
+            ],
+        },
+        orderBy: { blockTime: 'desc' },
+    });
 
+    if (!latestTransaction) {
+        return { needsSync: true, lastSyncTime: null, lastTransactionTime: null };
+    }
+
+    // Check if the latest transaction is recent (within last hour)
+    const oneHourAgo = Math.floor(Date.now() / 1000) - 3600;
+    const isRecent = latestTransaction.blockTime > oneHourAgo;
+
+    return {
+        needsSync: !isRecent,
+        lastSyncTime: latestTransaction.blockTime,
+        lastTransactionTime: latestTransaction.blockTime,
+        lastSignature: latestTransaction.signature
+    };
+}
 
 // --- Data Fetching & Service Logic ---
 
 async function syncTransfersForWallet(walletAddress) {
+    console.log(`[Solana RPC] Checking sync status for wallet: ${walletAddress}`);
+    
+    // Check if wallet needs syncing
+    const syncStatus = await getWalletSyncStatus(walletAddress);
+    
+    if (!syncStatus.needsSync) {
+        console.log(`[Solana RPC] Wallet ${walletAddress} recently synced (last: ${new Date(syncStatus.lastSyncTime * 1000).toISOString()}), skipping`);
+        return [];
+    }
+
     console.log(`[Solana RPC] Fetching transfers for wallet: ${walletAddress}`);
     const allParsedTransactions = [];
     try {
         const ata = await findAssociatedTokenAddress(walletAddress, MINT_ADDRESS);
 
-        const latestTransaction = await prisma.transaction.findFirst({
-            where: {
-                OR: [
-                    { sourceWallet: { address: walletAddress } },
-                    { destinationWallet: { address: walletAddress } },
-                ],
-            },
-            orderBy: { blockTime: 'desc' },
-        });
+        // Get signatures starting from the latest processed transaction
+        const signatures = await getSignaturesForAddress(ata, syncStatus.lastSignature);
 
-        const signatures = await getSignaturesForAddress(ata);
-
+        // Only process signatures that are newer than our latest transaction
+        let processedCount = 0;
         for (const sig of signatures) {
+            // Skip if we've already processed this transaction
+            if (syncStatus.lastSignature && sig.signature === syncStatus.lastSignature) {
+                console.log(`[Solana RPC] Reached already processed transaction ${sig.signature}, stopping for wallet ${walletAddress}`);
+                break;
+            }
+
             const tx = await getTransaction(sig.signature);
             if (tx) {
                 const parsed = parseTransaction(tx, walletAddress, ata);
                 if (parsed) {
                     allParsedTransactions.push(parsed);
+                    processedCount++;
                 }
             }
             await sleep(400); // Rate limit
         }
+        
+        console.log(`[Solana RPC] Processed ${processedCount} new transactions for wallet ${walletAddress}`);
     } catch (error) {
         console.error(`[ERROR] Solana RPC Error for wallet ${walletAddress}:`, error.message || JSON.stringify(error));
     }
     return allParsedTransactions;
 }
 
-async function getSignaturesForAddress(ata) {
+async function getSignaturesForAddress(ata, beforeSignature = null) {
     let allSignatures = [];
-    let beforeSignature = null;
+    let currentBeforeSignature = beforeSignature;
     let hasMore = true;
+    let batchCount = 0;
+
+    console.log(`[Solana RPC] Fetching signatures for ${ata}${beforeSignature ? ` starting from ${beforeSignature.substring(0, 8)}...` : ''}`);
 
     while (hasMore) {
-        const params = [ata, { limit: 1000, ...(beforeSignature ? { before: beforeSignature } : {}) }];
+        batchCount++;
+        const params = [ata, { limit: 1000, ...(currentBeforeSignature ? { before: currentBeforeSignature } : {}) }];
         const { data } = await axios.post(SOLANA_RPC_URL, {
             jsonrpc: '2.0',
             id: 1,
@@ -157,13 +200,15 @@ async function getSignaturesForAddress(ata) {
             hasMore = false;
         } else {
             allSignatures = allSignatures.concat(currentBatch);
-            beforeSignature = currentBatch[currentBatch.length - 1].signature; // Last signature of current batch for next iteration
+            currentBeforeSignature = currentBatch[currentBatch.length - 1].signature; // Last signature of current batch for next iteration
             if (currentBatch.length < 1000) { // If less than limit, no more pages
                 hasMore = false;
             }
         }
         await sleep(200); // Rate limit for RPC calls
     }
+    
+    console.log(`[Solana RPC] Fetched ${allSignatures.length} signatures in ${batchCount} batches for ${ata}`);
     return allSignatures;
 }
 
@@ -298,16 +343,43 @@ async function refreshDataViaRPC() {
     console.log(`[LOG] Will scan ${targetWallets.length} wallets for transfer history.`);
     
     const allNewTransactions = new Map();
-    for (const address of targetWallets) {
-        const transactions = await syncTransfersForWallet(address);
-        for (const tx of transactions) {
-            if (!allNewTransactions.has(tx.signature)) {
-                allNewTransactions.set(tx.signature, tx);
+    const batchSize = 5; // Process 5 wallets at a time to avoid overwhelming the RPC
+    
+    for (let i = 0; i < targetWallets.length; i += batchSize) {
+        const batch = targetWallets.slice(i, i + batchSize);
+        console.log(`[LOG] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(targetWallets.length / batchSize)} (wallets ${i + 1}-${Math.min(i + batchSize, targetWallets.length)})`);
+        
+        // Process batch in parallel
+        const batchPromises = batch.map(async (address) => {
+            try {
+                const transactions = await syncTransfersForWallet(address);
+                return transactions;
+            } catch (error) {
+                console.error(`[ERROR] Failed to sync wallet ${address}:`, error.message);
+                return [];
             }
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Collect all transactions from this batch
+        for (const transactions of batchResults) {
+            for (const tx of transactions) {
+                if (!allNewTransactions.has(tx.signature)) {
+                    allNewTransactions.set(tx.signature, tx);
+                }
+            }
+        }
+        
+        // Add delay between batches to be respectful to the RPC
+        if (i + batchSize < targetWallets.length) {
+            console.log(`[LOG] Waiting 2 seconds before next batch...`);
+            await sleep(2000);
         }
     }
 
     const transactionsToProcess = Array.from(allNewTransactions.values());
+    console.log(`[LOG] Found ${transactionsToProcess.length} unique new transactions to process`);
 
     if (transactionsToProcess.length > 0) {
         const uniqueBlockTimes = [...new Set(transactionsToProcess.map(tx => {
@@ -373,6 +445,8 @@ async function refreshDataViaRPC() {
                 },
             });
         }
+    } else {
+        console.log(`[LOG] No new transactions found, skipping database updates`);
     }
 
     console.log('[LOG] Data refresh process finished. Starting cost basis calculation...');

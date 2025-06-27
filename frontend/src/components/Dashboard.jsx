@@ -20,7 +20,7 @@ export default function Dashboard() {
       setStatusMessage(refreshRes.data.message || 'Data refreshed. Fetching updated data...');
       const [transactionsRes, holdersRes] = await Promise.all([
         fetchTransactions(),
-        fetchHolders(Number.MAX_SAFE_INTEGER),
+        fetchHolders(1000),
       ]);
       setTransactions(transactionsRes.data);
       setHolders(holdersRes.data.holders);
@@ -43,7 +43,7 @@ export default function Dashboard() {
         try {
             const [transactionsRes, holdersRes] = await Promise.all([
               fetchTransactions(),
-              fetchHolders(Number.MAX_SAFE_INTEGER),
+              fetchHolders(1000),
             ]);
             setTransactions(transactionsRes.data);
             setHolders(holdersRes.data.holders);

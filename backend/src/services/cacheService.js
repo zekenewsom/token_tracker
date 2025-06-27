@@ -77,9 +77,9 @@ function calculateOwnershipPercentage(balance) {
 }
 
 // Token Holders Cache
-async function getCachedTokenHolders(limit = 100) {
+async function getCachedTokenHolders(limit = 1000) {
     if (!isCacheValid(cache.tokenHolders)) {
-        console.log('[CACHE] Refreshing token holders cache...');
+        console.log(`[CACHE] Refreshing token holders cache for limit: ${limit}...`);
         
         const holders = await prisma.tokenHolder.findMany({
             take: limit,
@@ -101,15 +101,16 @@ async function getCachedTokenHolders(limit = 100) {
         cache.tokenHolders.lastUpdated = Date.now();
     }
     
-    return cache.tokenHolders.data;
+    // Return the requested number of holders
+    return cache.tokenHolders.data.slice(0, limit);
 }
 
 // Top Holders Cache
-async function getCachedTopHolders(limit = 100) {
+async function getCachedTopHolders(limit = 1000) {
     const cacheKey = `top_${limit}`;
     
     if (!cache.topHolders.data || !isCacheValid(cache.topHolders)) {
-        console.log('[CACHE] Refreshing top holders cache...');
+        console.log(`[CACHE] Refreshing top holders cache for limit: ${limit}...`);
         
         const holders = await prisma.tokenHolder.findMany({
             take: limit,

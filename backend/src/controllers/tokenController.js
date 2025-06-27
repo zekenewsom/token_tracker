@@ -58,7 +58,7 @@ exports.getTransactions = async (req, res) => {
 // Controller to get the top token holders from the database (with caching)
 exports.getTokenHolders = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 100;
+    const limit = parseInt(req.query.limit, 10) || 1000;
 
     // Use cached token holders if available
     const holders = await getCachedTokenHolders(limit);
