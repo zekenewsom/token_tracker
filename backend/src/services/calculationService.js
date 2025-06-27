@@ -100,6 +100,7 @@ async function calculateAverageCostBasis() {
                         }
                     }
 
+<<<<<<< HEAD
                     // FIX: Properly adjust cost basis for the price difference
                     // The oversold tokens were "sold" at the current average cost, but we need to
                     // account for the fact that they should have been acquired at the virtual buy price
@@ -109,6 +110,13 @@ async function calculateAverageCostBasis() {
                     
                     console.log(`[DEBUG] Oversell handling: missingAmount=${missingAmount}, virtualBuyPrice=${virtualBuyPrice}, averageCost=${averageCost}`);
                     console.log(`[DEBUG] Cost basis adjustment: ${costBasisAdjustment} (price difference: ${virtualBuyPrice - averageCost})`);
+=======
+                    // Buy the missing amount and immediately deduct it for the sale
+                    costBasis += missingAmount * virtualBuyPrice;
+                    costBasis -= missingAmount * virtualBuyPrice;
+                    currentTokens = 0; // Reset to 0 after handling the oversell
+                    console.log(`[DEBUG] Injected virtual buy and sell: missingAmount=${missingAmount}, virtualBuyPrice=${virtualBuyPrice}`);
+>>>>>>> 0124d98ad28de894f30389e000a9e15ad944f3d4
                 }
             }
             

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // Controller for wallet routes
 const prisma = require('../utils/prismaClient');
 const { 
@@ -21,10 +22,37 @@ exports.getWalletBalance = async (req, res) => {
     res.json(walletData);
   } catch (error) {
     console.error('Error fetching wallet balance:', error);
+=======
+// backend/src/controllers/walletController.js
+const prisma = require('../utils/prismaClient');
+
+// Get the current balance for a wallet from the TokenHolder table
+exports.getWalletBalance = async (req, res) => {
+  const { address } = req.params;
+
+  try {
+    const wallet = await prisma.wallet.findUnique({
+      where: { address },
+      include: {
+        token_holders: {
+          select: { balance: true },
+        },
+      },
+    });
+
+    if (!wallet || wallet.token_holders.length === 0) {
+      return res.status(404).json({ error: 'Wallet not found' });
+    }
+
+    res.json({ balance: wallet.token_holders[0].balance });
+  } catch (err) {
+    console.error('Error fetching wallet balance:', err.message);
+>>>>>>> 0124d98ad28de894f30389e000a9e15ad944f3d4
     res.status(500).json({ error: 'Failed to fetch wallet balance' });
   }
 };
 
+<<<<<<< HEAD
 exports.getAvgAcquisitionPrice = async (req, res) => {
   const { address } = req.params;
   const { tokenId } = req.query; // Optional: filter by specific token
@@ -83,5 +111,29 @@ exports.getAvgAcquisitionPrice = async (req, res) => {
   } catch (error) {
     console.error('Error calculating average acquisition price:', error);
     res.status(500).json({ error: 'Failed to calculate average acquisition price' });
+=======
+// Get the average acquisition price in USD for a wallet
+exports.getAvgAcquisitionPrice = async (req, res) => {
+  const { address } = req.params;
+
+  try {
+    const wallet = await prisma.wallet.findUnique({
+      where: { address },
+      include: {
+        token_holders: {
+          select: { average_acquisition_price_usd: true },
+        },
+      },
+    });
+
+    if (!wallet || wallet.token_holders.length === 0) {
+      return res.status(404).json({ error: 'Wallet not found' });
+    }
+
+    res.json({ avgPrice: wallet.token_holders[0].average_acquisition_price_usd });
+  } catch (err) {
+    console.error('Error fetching average acquisition price:', err.message);
+    res.status(500).json({ error: 'Failed to fetch average acquisition price' });
+>>>>>>> 0124d98ad28de894f30389e000a9e15ad944f3d4
   }
 };
