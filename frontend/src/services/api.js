@@ -22,4 +22,5 @@ export const fetchTransactions = (page = 1, limit = 100) =>
 /**
  * Fetches token holders from the backend.
  */
-export const fetchHolders = () => api.get('/api/token/holders');
+export const fetchHolders = (limit = 1000) => 
+    api.get(`/api/token/holders?limit=${limit}`);

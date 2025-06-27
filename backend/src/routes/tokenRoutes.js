@@ -13,5 +13,8 @@ router.get('/transactions', tokenController.getTransactions);
 // Route to get token holders
 router.get('/holders', tokenController.getTokenHolders);
 
+// Route to get cache statistics
+router.get('/cache-stats', tokenController.getCacheStats);
+
 module.exports = router;
 

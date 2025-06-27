@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "db:init": "prisma migrate dev"
+    "db:init": "prisma migrate dev",
+    "refresh-data": "node src/scripts/refreshData.js",
+    "full-cache-refresh": "node src/scripts/fullCacheRefresh.js",
+    "cache-stats": "curl http://localhost:4000/api/token/cache-stats",
+    "cache-manager": "node src/scripts/cacheManager.js"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
