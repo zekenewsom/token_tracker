@@ -24,3 +24,8 @@ export const fetchTransactions = (page = 1, limit = 100) =>
  */
 export const fetchHolders = (limit = 1000) => 
     api.get(`/api/token/holders?limit=${limit}`);
+
+/**
+ * Fetches holder analysis data from the backend.
+ */
+export const fetchHolderAnalysis = () => api.get('/api/analysis/holders');

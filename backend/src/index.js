@@ -6,6 +6,7 @@ const cors = require('cors');
 
 const tokenRoutes = require('./routes/tokenRoutes');
 const walletRoutes = require('./routes/walletRoutes');
+const analysisRoutes = require('./routes/analysisRoutes');
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 
 app.use('/api/token', tokenRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/analysis', analysisRoutes);
 
 const PORT = process.env.PORT || 4000;
 
