@@ -100,9 +100,11 @@ async function calculateAverageCostBasis() {
                         }
                     }
 
-                    currentTokens = 0; // Reset to 0, as we're "buying back" the missing amount
+                    // Buy the missing amount and immediately deduct it for the sale
                     costBasis += missingAmount * virtualBuyPrice;
-                    console.log(`[DEBUG] Injected virtual buy: missingAmount=${missingAmount}, virtualBuyPrice=${virtualBuyPrice}, costIncrease=${missingAmount * virtualBuyPrice}`);
+                    costBasis -= missingAmount * virtualBuyPrice;
+                    currentTokens = 0; // Reset to 0 after handling the oversell
+                    console.log(`[DEBUG] Injected virtual buy and sell: missingAmount=${missingAmount}, virtualBuyPrice=${virtualBuyPrice}`);
                 }
             }
             
