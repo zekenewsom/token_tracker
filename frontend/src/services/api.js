@@ -24,3 +24,50 @@ export const fetchTransactions = (page = 1, limit = 100) =>
  */
 export const fetchHolders = (limit = 1000) => 
     api.get(`/api/token/holders?limit=${limit}`);
+
+/**
+ * Fetches holder analysis data from the backend.
+ */
+export const fetchHolderAnalysis = () => api.get('/api/analysis/holders');
+
+/**
+ * Fetches comprehensive trading dashboard data
+ */
+export const fetchCompleteTradingDashboard = (timeframe = '24h') => 
+    api.get(`/api/analysis/complete-dashboard?timeframe=${timeframe}`);
+
+/**
+ * Fetches whale analysis data
+ */
+export const fetchWhaleAnalysis = (limit = 20) => 
+    api.get(`/api/analysis/whale-analysis?limit=${limit}`);
+
+/**
+ * Fetches trading insights and signals
+ */
+export const fetchTradingInsights = (timeframe = '24h') => 
+    api.get(`/api/analysis/trading-insights?timeframe=${timeframe}`);
+
+/**
+ * Fetches market data and technical analysis
+ */
+export const fetchMarketData = (timeframe = '24h') => 
+    api.get(`/api/analysis/market-data?timeframe=${timeframe}`);
+
+/**
+ * Fetches whale alerts
+ */
+export const fetchWhaleAlerts = () => 
+    api.get('/api/analysis/whale-alerts');
+
+/**
+ * Fetches market sentiment analysis
+ */
+export const fetchMarketSentiment = (timeframe = '24h') => 
+    api.get(`/api/analysis/market-sentiment?timeframe=${timeframe}`);
+
+/**
+ * Fetches risk assessment data
+ */
+export const fetchRiskAssessment = (timeframe = '24h') => 
+    api.get(`/api/analysis/risk-assessment?timeframe=${timeframe}`);

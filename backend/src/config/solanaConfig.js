@@ -13,6 +13,6 @@ module.exports = {
   TEST_MODE_ENABLED: true,
 
   // The number of top holders to process when TEST_MODE_ENABLED is true.
-  TEST_MODE_TOP_N_HOLDERS: 1000,
+  TEST_MODE_TOP_N_HOLDERS: 320,
 
 };

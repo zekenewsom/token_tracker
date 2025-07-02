@@ -1,5 +1,5 @@
-// frontend/src/components/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { refreshData, fetchTransactions, fetchHolders } from '../services/api';
 import TransactionFeed from './TransactionFeed.jsx';
 import HolderDistribution from './HolderDistribution.jsx';
@@ -73,13 +73,17 @@ export default function Dashboard() {
               Tracking: 2mhszy8YHwqs1fxruVHQQAUmNcfq31mtkmYYtNZNpump
             </p>
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={isLoading}
-            className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            {isLoading ? 'Refreshing...' : 'Refresh Data'}
-          </button>
+          <nav className="flex items-center space-x-4">
+            <Link to="/" className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md">Dashboard</Link>
+            <Link to="/analysis" className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md">Trading Analysis</Link>
+            <button
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {isLoading ? 'Refreshing...' : 'Refresh Data'}
+            </button>
+          </nav>
         </div>
 
         {/* Status and Error Display */}
