@@ -75,7 +75,7 @@ export default function Dashboard() {
           </div>
           <nav className="flex items-center space-x-4">
             <Link to="/" className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md">Dashboard</Link>
-            <Link to="/analysis" className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md">Holder Analysis</Link>
+            <Link to="/analysis" className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md">Trading Analysis</Link>
             <button
               onClick={handleRefresh}
               disabled={isLoading}

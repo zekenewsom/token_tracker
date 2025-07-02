@@ -47,3 +47,39 @@ model HourlyPrice {
   timestamp Int      @unique // Unix timestamp (seconds) for the start of the hour
   price_usd Float
 }
+
+model CacheEntry {
+  id          Int      @id @default(autoincrement())
+  cache_key   String   @unique
+  data        Json     // Cached response data
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+  accessed_at DateTime @default(now())
+  hit_count   Int      @default(0)
+  
+  @@index([cache_key])
+  @@index([expires_at])
+}
+
+model ApiCallLog {
+  id            Int      @id @default(autoincrement())
+  endpoint      String
+  method        String
+  response_hash String?  // Hash of response to detect changes
+  success       Boolean
+  created_at    DateTime @default(now())
+  response_time Int?     // milliseconds
+  error_message String?
+  
+  @@index([endpoint, created_at])
+  @@index([created_at])
+}
+
+model ChangeDetectionHash {
+  id           Int      @id @default(autoincrement())
+  hash_type    String   @unique // e.g., 'holder_list', 'top_50_holders'
+  current_hash String
+  last_updated DateTime @default(now())
+  
+  @@index([hash_type])
+}
